@@ -1,9 +1,11 @@
 # 📻 Radio OACV — site public
 
+## 🌐 https://firtoks.github.io/radio-oacv/
+
 Ce dépôt contient **le site public** de la radio : la page que les visiteurs
 ouvrent pour écouter. Il est **entièrement statique** — aucune base de données,
 aucun serveur, aucune dépendance. Le site est donc disponible en permanence,
-avec HTTPS, depuis Netlify.
+en HTTPS, depuis GitHub Pages.
 
 ## Ce qu'il y a dedans
 
@@ -14,7 +16,7 @@ app.js              le moteur : antenne, file de lecture, jingle, publicité
 ui.js               l'interface : pochette, paroles, visualiseur
 assets/             le logo
 audio/              jingle et publicité maison, joués par app.js
-netlify.toml        cache, en-têtes de sécurité, redirections
+netlify.toml        configuration d'hébergement alternative (Netlify)
 ```
 
 La musique vient de YouTube (lecteur intégré) et la liste des titres est
@@ -35,6 +37,9 @@ npm run export          # recrée ce dossier depuis le projet
 cd ../radio-site
 git add . && git commit -m "Mise à jour du site" && git push
 ```
+
+GitHub Pages republie automatiquement le site à chaque `git push` : compte
+environ une minute avant que la nouvelle version soit visible.
 
 ## Ce qui n'est pas ici
 
