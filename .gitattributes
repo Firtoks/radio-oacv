@@ -1,0 +1,11 @@
+# Les fins de ligne sont normalisées : le dépôt reste identique quelle
+# que soit la machine qui l'a écrit.
+* text=auto eol=lf
+
+# Fichiers binaires : aucune conversion
+*.mp3 binary
+*.ogg binary
+*.webm binary
+*.png binary
+*.jpg binary
+*.jpeg binary

@@ -1,0 +1,86 @@
+# ============================================================
+#  RADIO OACV — configuration Netlify
+#  Le site public est entièrement statique : aucune commande de
+#  build n'est nécessaire. Ce fichier règle les en-têtes de
+#  sécurité, le cache et les redirections.
+# ============================================================
+
+[build]
+  # le site est déjà prêt : aucun build, la racine est publiée
+  publish = "."
+  command = ""
+
+# ============================================================
+#  Sécurité
+#
+#  Le lecteur YouTube a besoin de sauts de cadre et charge des
+#  scripts depuis Google : connect-src est donc laissé ouvert aux
+#  sites tiers, comme le fait déjà le site. Ce qui compte ici, c'est
+#  que le dépôt est public : ces en-têtes protègent tes visiteurs
+#  si le dépôt était un jour compromis.
+#
+#  Le seul script inline de index.html est autorisé par son empreinte
+#  exacte (window.onYouTubeIframeAPIReady), pas par 'unsafe-inline'.
+# ============================================================
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'sha256-vWZWlkmASXnEiksluCXpfEkDRMQ6q0OU0Htgq1yBIhI=' https://www.youtube.com https://s.ytimg.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com; img-src 'self' data: https://i.ytimg.com https://img.youtube.com https://*.ggpht.com; media-src 'self' https: blob:; connect-src 'self' https:; font-src 'self' https://fonts.gstatic.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+
+# ============================================================
+#  Cache
+#  Les noms de fichiers ne changent pas (aucun hash), donc le cache
+#  est court : le navigateur vérifie souvent sans jamais servir une
+#  version périmée.
+# ============================================================
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/app.js"
+  [headers.values]
+    Cache-Control = "public, max-age=600, must-revalidate"
+
+[[headers]]
+  for = "/ui.js"
+  [headers.values]
+    Cache-Control = "public, max-age=600, must-revalidate"
+
+[[headers]]
+  for = "/style.css"
+  [headers.values]
+    Cache-Control = "public, max-age=600, must-revalidate"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"
+
+[[headers]]
+  for = "/audio/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800"
+
+# ============================================================
+#  Redirections
+#  Le site est une seule page : toute adresse inconnue retombe sur
+#  l'accueil (code 200, pas une 404).
+# ============================================================
+
+[[redirects]]
+  from = "/"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
