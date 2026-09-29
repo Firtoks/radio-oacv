@@ -74,6 +74,79 @@ function shuffle(arr){
   return arr;
 }
 
+/* ---------- Antenne partagée entre tous les auditeurs ----------
+   L'antenne ne doit PAS être tirée au hasard dans chaque navigateur :
+   deux personnes qui ouvrent la page obtenaient deux programmes
+   différents — mêmes titres, mais dans un autre ordre, et surtout des
+   coupures publicitaires déclenchées à des moments différents.
+
+   On tire donc dans un générateur « semé » par l'heure : pendant une
+   même tranche de 15 minutes, tout le monde entend la même antenne,
+   les mêmes musiques dans le même ordre, et les mêmes pubs au même
+   endroit.
+
+   Le hasard reste utilisé pour les effets visuels (barres du
+   visualiseur, emojis…) : ceux-là n'ont pas besoin d'être identiques. */
+const ROTATION_MS = 15 * 60 * 1000;   // durée pendant laquelle l'antenne est figée
+
+/* cyrb53 : transforme une chaîne en entier bien réparti. */
+function hashSeed(str){
+  let h1 = 0xdeadbeef ^ str.length, h2 = 0x41c6ce57 ^ str.length;
+  for (let i = 0; i < str.length; i++){
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+
+/* mulberry32 : générateur pseudo-aléatoire rapide et reproductible. */
+function mulberry32(seed){
+  let a = seed >>> 0;
+  return function(){
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/* Un seul tirage par tranche, partagé par tous les auditeurs. */
+let progRng = null;
+function programRng(){
+  const bucket = Math.floor(Date.now() / ROTATION_MS);
+  if (!progRng || progRng.bucket !== bucket){
+    progRng = { bucket, next: mulberry32(hashSeed('oacv-antenne:' + bucket)) };
+  }
+  return progRng.next;
+}
+
+/* Tirage dans l'antenne partagée (entier dans [min, max]). */
+function riProgram(min, max){
+  const r = programRng();
+  return min + Math.floor(r() * (max - min + 1));
+}
+
+function shuffleProgram(arr){
+  const r = programRng();
+  for (let i = arr.length - 1; i > 0; i--){
+    const j = Math.floor(r() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+/* Un auditeur qui arrive en cours de tranche se cale au bon endroit
+   au lieu de repartir du début : sans cela, celui qui ouvre la page
+   vingt minutes après les autres entendrait une autre antenne. */
+const AVG_TRACK_MS = 3.5 * 60 * 1000;
+function elapsedTracks(){
+  const start = Math.floor(Date.now() / ROTATION_MS) * ROTATION_MS;
+  return Math.max(0, Math.floor((Date.now() - start) / AVG_TRACK_MS));
+}
+
 /* Mémoire d'antenne persistante : le lancement suivant ne rejoue pas les titres
    déjà passés et ne peut pas redémarrer sur le morceau de la session précédente. */
 const RECENT_KEY = 'oacv_recent';
@@ -300,7 +373,7 @@ async function resolveMeta(v){
 }
 
 /* ---------- Rotation intelligente (shuffle bags) ---------- */
-const musicBag = { bag: [] };
+const musicBag = { bag: [], offset: 0 };
 
 function drawMusic(){
   const isFailing = id => { const f = S.recentFail.get(id); return f && Date.now() - f < FAIL_COOLDOWN; };
@@ -310,7 +383,12 @@ function drawMusic(){
     let cands = pool.filter(v => !recent.has(v.id));
     if (cands.length < 3) cands = pool;
     if (!cands.length) cands = S.musicPool.slice();
-    musicBag.bag = shuffle(cands.slice());
+    musicBag.bag = shuffleProgram(cands.slice());
+    /* on « saute » les titres déjà diffusés dans la tranche en cours,
+       pour qu'un auditeur arrivant en retard soit à la même place */
+    if (!musicBag.offset){
+      musicBag.offset = Math.min(elapsedTracks(), Math.max(0, musicBag.bag.length - 1));
+    }
     const last = S.lastPlayed[0];
     if (last && musicBag.bag.length > 1 && musicBag.bag[musicBag.bag.length - 1].id === last){
       const t = musicBag.bag[0];
@@ -339,7 +417,7 @@ function buildAdBag(){
   const bag = S.adsPool.map(v => ({ type: 'yt', video: v }));
   const poids = Math.max(1, Math.round(PUBOACV_WEIGHT) || 1);
   for (let i = 0; i < poids; i++) bag.push({ type: 'oacv' });
-  shuffle(bag);
+  shuffleProgram(bag);
   return bag;
 }
 
@@ -380,9 +458,14 @@ const planner = {
   needBreak: 0, needJingle: 0,
 
   init(){
-    this.sinceBreak = 0; this.sinceJingle = 0;
-    this.needBreak = ri(...MUSICS_BEFORE_BREAK);
-    this.needJingle = ri(...JINGLE_EVERY);
+    /* Les mêmes tirages que les autres auditeurs, et on se replace sur
+       la position de la tranche en cours : la coupure tombe donc au
+       même endroit pour tout le monde. */
+    const avance = elapsedTracks();
+    this.sinceBreak = avance % (MUSICS_BEFORE_BREAK[1] + 1);
+    this.sinceJingle = avance % (JINGLE_EVERY[1] + 1);
+    this.needBreak = riProgram(...MUSICS_BEFORE_BREAK);
+    this.needJingle = riProgram(...JINGLE_EVERY);
     this.q = [{ kind: 'jingle', src: SRC_JINGLE }];
     this.refill();
   },
@@ -398,14 +481,14 @@ const planner = {
     if (breakDue){
       const group = [];
       if (jingleDue) group.push({ kind: 'jingle', src: SRC_JINGLE });
-      const n = ri(...ADS_PER_BREAK);
+      const n = riProgram(...ADS_PER_BREAK);
       for (let i = 0; i < n; i++) group.push(makeAdSeg());
-      this.sinceBreak = 0;  this.needBreak  = ri(...MUSICS_BEFORE_BREAK);
-      this.sinceJingle = 0; this.needJingle = ri(...JINGLE_EVERY);
+      this.sinceBreak = 0;  this.needBreak  = riProgram(...MUSICS_BEFORE_BREAK);
+      this.sinceJingle = 0; this.needJingle = riProgram(...JINGLE_EVERY);
       return group;
     }
     if (jingleDue){
-      this.sinceJingle = 0; this.needJingle = ri(...JINGLE_EVERY);
+      this.sinceJingle = 0; this.needJingle = riProgram(...JINGLE_EVERY);
       return [{ kind: 'jingle', src: SRC_JINGLE }];
     }
     this.sinceBreak++; this.sinceJingle++;
