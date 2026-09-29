@@ -116,7 +116,7 @@ automatique du navigateur ne doit jamais pouvoir les réécrire -->
       <!-- barre de progression : purement visuelle, aucun seek possible -->
       <div class="bar-row">
         <span class="t mono" id="t-cur">0:00</span>
-        <div class="progress" id="progress">
+        <div class="progress" id="progress" role="progressbar" aria-label="Progression du direct" title="Radio en direct : la progression n'est pas cliquable">
           <div class="progress-track"><span class="progress-tick"></span><span class="progress-tick"></span><span class="progress-tick"></span></div>
           <div class="progress-bar" id="bar"><span class="progress-head"></span></div>
           <div class="progress-sheen"></div>
@@ -213,6 +213,7 @@ automatique du navigateur ne doit jamais pouvoir les réécrire -->
   </div>
 </div>
 
+<script src="radio-live.js" defer></script>
 <script src="app.js" defer></script>
 <script src="ui.js" defer></script>
 </body>

@@ -789,6 +789,42 @@ function setStageUI(seg){
   chip.classList.remove('ad','jingle');
   fb.classList.add('hidden');
 
+  /* Antenne centrale : le serveur dit ce qui passe, on ne devine rien. */
+  if (seg && seg.__live){
+    const kind = seg.kind || 'music';
+    if (kind === 'music'){
+      chip.textContent = 'MUSIQUE';
+      title.textContent = seg.title ? cleanTitle(seg.title) : 'Radio OACV';
+      sub.textContent = seg.artist ? (seg.artist + ' · En direct') : 'En direct';
+      if (seg.thumb){ art.src = seg.thumb; art.classList.remove('hidden'); }
+      else { art.classList.add('hidden'); }
+    } else if (kind === 'announcement'){
+      chip.textContent = 'ANNONCE'; chip.classList.add('jingle');
+      title.textContent = seg.title || 'Annonce';
+      sub.textContent = 'Annonce de la radio';
+      art.classList.add('hidden');
+      em.textContent = '🎙️'; lb.textContent = 'ANNONCE';
+      fb.classList.remove('hidden');
+    } else if (kind === 'jingle'){
+      chip.textContent = 'JINGLE'; chip.classList.add('jingle');
+      title.textContent = seg.title || 'Jingle Radio OACV';
+      sub.textContent = 'Votre antenne, votre son';
+      art.classList.add('hidden');
+      em.textContent = '🎧'; lb.textContent = 'JINGLE';
+      fb.classList.remove('hidden');
+    } else {
+      chip.textContent = 'PUBLICITÉ'; chip.classList.add('ad');
+      title.textContent = seg.title || 'Publicité';
+      sub.textContent = seg.id === 'local:puboacv' ? 'La publicité de la maison 📻' : 'Publicité';
+      art.classList.add('hidden');
+      em.textContent = seg.id === 'local:puboacv' ? '📻' : FALLBACK_ADS[ri(0, FALLBACK_ADS.length - 1)];
+      lb.textContent = 'PUBLICITÉ';
+      fb.classList.remove('hidden');
+    }
+    document.title = '▶ ' + title.textContent + ' — Radio OACV';
+    return;
+  }
+
   if (seg.kind === 'music'){
     chip.textContent = 'MUSIQUE';
     title.textContent = seg.video.title ? cleanTitle(seg.video.title) : 'Titre en cours de chargement…';
@@ -1057,16 +1093,9 @@ function skip(){
   playNext();
 }
 
-$('progress').addEventListener('click', e => {
-  const ch = S.active;
-  if (S.state !== 'playing' || !ch || ch.type !== 'yt' || !ch.player.ready) return;
-  const rect = e.currentTarget.getBoundingClientRect();
-  const ratio = clamp01((e.clientX - rect.left) / rect.width);
-  try {
-    const dur = ch.player.yt.getDuration();
-    if (dur > 0) ch.player.yt.seekTo(ratio * dur, true);
-  } catch(err){}
-});
+/* La barre de progression est PUREMENT VISUELLE : on est en radio,
+   on ne peut ni revenir en arrière ni sauter un morceau. Aucun
+   écouteur de clic ici, volontairement. */
 
 $('btn-play').addEventListener('click', togglePlay);
 $('btn-skip').addEventListener('click', skip);
@@ -1089,7 +1118,73 @@ function waitForApi(){
   });
 }
 
+/* Le serveur central est-il joignable ? On interroge son état public.
+   C'est ce qui permet au site de savoir s'il doit écouter la radio
+   centrale ou se contenter du lecteur local. */
+async function brancherAntenneCentrale(){
+  if (!window.radioLive) return false;
+  const base = (window.RADIO_API || '').replace(/\/+$/, '');
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 3000);
+    const r = await fetch(base + '/api/now-playing', { signal: ctrl.signal, cache: 'no-store' });
+    clearTimeout(t);
+    if (!r.ok) return false;
+    const info = await r.json();
+    if (!info || info.enLigne !== true) return false;
+    return brancherRadioCentrale();
+  } catch {
+    return false;                 // pas de serveur : lecteur autonome
+  }
+}
+
+/* ---------- Antenne centrale ----------
+   Le site n'a plus de playlist : il écoute le flux du serveur. C'est
+   lui qui choisit ce qui passe, donc tout le monde entend la même
+   chose au même instant. */
+function applyLiveSegment(np){
+  const seg = { ...np, __live: true };
+  if (!seg.title) seg.title = 'Radio OACV';
+  setStageUI(seg);
+  /* les paroles suivent le titre réellement diffusé */
+  if (typeof lyricsOvh === 'function' && np.artist && np.title){
+    try {
+      const t = splitArtistTrack(np.artist, np.title);
+      if (t) lyricsOvh(t.artist, t.track).catch(() => {});
+    } catch { /* paroles indisponibles */ }
+  }
+}
+
+function brancherRadioCentrale(){
+  const live = window.radioLive;
+  if (!live) return false;
+  /* le lecteur n'est plus cliquable pour changer de morceau */
+  $('btn-skip').classList.add('hidden');
+
+  /* les données arrivent dans event.detail (voir RadioLive.emit) */
+  live.addEventListener('segment', e => {
+    /* l'interface suit exactement ce que le serveur diffuse */
+    if (e.detail) applyLiveSegment(e.detail);
+  });
+  live.addEventListener('position', e => {
+    const d = e.detail || {};
+    updateProgress((d.ms || 0) / 1000, (d.dur || 0) / 1000);
+  });
+  live.addEventListener('playing', () => { setStatus('EN DIRECT'); setEq('playing'); });
+  live.addEventListener('reconnecting', () => setStatus('Reconnexion au direct\u2026'));
+
+  $('btn-play').disabled = false;
+  setStatus('Prêt — appuie sur lecture');
+  live.start('/stream');
+  return true;
+}
+
 (async function boot(){
+  /* Si le serveur de radio est joignable, on écoute son flux central.
+     Sinon on retombe sur l'ancien lecteur autonome (utile pour
+     écouter le site sans serveur). */
+  if (await brancherAntenneCentrale()) return;
+
   setStatus('Chargement des playlists\u2026');
   await waitForApi();
   createPlayers();
